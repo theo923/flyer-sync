@@ -12,12 +12,30 @@ export default function ReceiptScreen() {
   const { addToQueue } = useOfflineQueue();
 
   const uploadMutation = trpc.uploadReceipt.useMutation({
-    onSuccess: () => Alert.alert("Success", "Receipt uploaded successfully!"),
+    onSuccess: (data) => {
+      console.log("Upload successful:", data);
+      Alert.alert("Success", "Receipt uploaded successfully!");
+    },
     onError: (error) => {
-      console.error("Upload failed:", error);
-      Alert.alert("Error", "Upload failed, receipt saved offline.");
+      console.error("Upload failed - Full error:", error);
+      console.error("Error message:", error.message);
+      console.error("Error code:", error.data?.code);
+      console.error("Error shape:", error.shape);
+      Alert.alert("Error", `Upload failed: ${error.message}`);
     },
   });
+
+  // Add a test query to check authentication status
+  const testQuery = trpc.getReceipts.useQuery();
+
+  // Check authentication status
+  useEffect(() => {
+    if (testQuery.error) {
+      console.error("Auth test failed:", testQuery.error);
+    } else if (testQuery.data) {
+      console.log("Auth test successful:", testQuery.data);
+    }
+  }, [testQuery.error, testQuery.data]);
 
   useEffect(() => {
     if (permission && !permission.granted) {
@@ -32,14 +50,20 @@ export default function ReceiptScreen() {
     }
 
     try {
+      console.log("Starting photo capture...");
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
+      console.log("Photo captured:", photo.uri);
+
       const networkState = await NetInfo.fetch();
+      console.log("Network state:", networkState.isConnected);
 
       const base64Image = await FileSystem.readAsStringAsync(photo.uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
+      console.log("Base64 image length:", base64Image.length);
 
       if (networkState.isConnected) {
+        console.log("Attempting upload...");
         uploadMutation.mutate({ imageBase64: base64Image });
       } else {
         await addToQueue(photo.uri);
@@ -77,6 +101,10 @@ export default function ReceiptScreen() {
     <View style={styles.container}>
       <CameraView style={styles.camera} facing="back" ref={cameraRef} />
       <View style={styles.controls}>
+        <Text style={styles.authStatus}>
+          Auth Status:{" "}
+          {testQuery.error ? "Failed" : testQuery.data ? "OK" : "Loading..."}
+        </Text>
         <Button
           title={uploadMutation.isPending ? "Processing..." : "Scan Receipt"}
           onPress={handleCaptureReceipt}
@@ -96,10 +124,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   controls: {
-    flexDirection: "row",
+    flexDirection: "column",
     justifyContent: "center",
+    alignItems: "center",
     padding: 20,
-    backgroundColor: "rgba(0,0,0,0.1)",
+    backgroundColor: "rgba(0,0,0,0.8)",
+  },
+  authStatus: {
+    color: "white",
+    marginBottom: 10,
+    fontSize: 12,
   },
   permissionText: {
     textAlign: "center",
